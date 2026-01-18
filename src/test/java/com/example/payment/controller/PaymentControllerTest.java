@@ -157,7 +157,7 @@ class PaymentControllerTest {
     void testUpdatePaymentStatus_Success() throws Exception {
         // Arrange
         testPayment.setStatus(Payment.PaymentStatus.COMPLETED);
-        when(paymentService.updatePaymentStatus(anyLong(), any())).thenReturn(testPayment);
+        when(paymentService.updatePaymentStatus(anyLong(), any(Payment.PaymentStatus.class))).thenReturn(testPayment);
 
         // Act & Assert
         mockMvc.perform(put("/api/v1/payments/1/status")
