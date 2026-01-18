@@ -202,22 +202,6 @@ public class PaymentService {
     }
 
     /**
-     * Update payment status.
-     *
-     * @param id payment ID
-     * @param status new payment status
-     * @return updated payment
-     */
-    public Payment updatePaymentStatus(Long id, Payment.PaymentStatus status) {
-        log.info("Updating payment status for ID: {} to {}", id, status);
-        Payment payment = getPaymentById(id);
-        payment.setStatus(status);
-        Payment updated = paymentRepository.save(payment);
-        log.info("Payment status updated successfully: {}", id);
-        return updated;
-    }
-
-    /**
      * Get payment statistics.
      *
      * @return statistics map
