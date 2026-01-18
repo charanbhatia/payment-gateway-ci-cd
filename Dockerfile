@@ -8,7 +8,8 @@ WORKDIR /app
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
-# Copy source code and build
+# Copy checkstyle configuration and source code
+COPY checkstyle.xml .
 COPY src ./src
 RUN mvn clean package -DskipTests
 
