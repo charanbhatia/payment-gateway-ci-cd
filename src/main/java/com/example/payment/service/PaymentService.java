@@ -1,6 +1,7 @@
 package com.example.payment.service;
 
 import com.example.payment.dto.PaymentRequest;
+import com.example.payment.exception.InvalidPaymentException;
 import com.example.payment.exception.PaymentException;
 import com.example.payment.exception.PaymentNotFoundException;
 import com.example.payment.model.Payment;
@@ -35,7 +36,18 @@ public class PaymentService {
         
         // Validate amount
         if (request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new PaymentException("Payment amount must be greater than zero");
+            throw new InvalidPaymentException("Payment amount must be greater than zero");
+        }
+        
+        // Validate amount limit
+        if (request.getAmount().compareTo(new BigDecimal("10000.00")) > 0) {
+            throw new InvalidPaymentException("Amount exceeds maximum limit");
+        }
+        
+        // Validate currency
+        if (!"USD".equals(request.getCurrency()) && !"EUR".equals(request.getCurrency()) 
+            && !"GBP".equals(request.getCurrency()) && !"INR".equals(request.getCurrency())) {
+            throw new InvalidPaymentException("Currency must be USD, EUR, GBP, or INR");
         }
         
         // Create payment entity
@@ -141,7 +153,7 @@ public class PaymentService {
         Payment payment = getPaymentById(id);
         
         if (payment.getStatus() != Payment.PaymentStatus.COMPLETED) {
-            throw new PaymentException("Only completed payments can be refunded");
+            throw new InvalidPaymentException("Only completed payments can be refunded");
         }
         
         payment.setStatus(Payment.PaymentStatus.REFUNDED);
@@ -171,6 +183,22 @@ public class PaymentService {
         
         log.info("Payment cancelled successfully: {}", id);
         return cancelled;
+    }
+
+    /**
+     * Update payment status.
+     *
+     * @param id payment ID
+     * @param status new payment status
+     * @return updated payment
+     */
+    public Payment updatePaymentStatus(Long id, Payment.PaymentStatus status) {
+        log.info("Updating payment status for ID: {} to {}", id, status);
+        Payment payment = getPaymentById(id);
+        payment.setStatus(status);
+        Payment updated = paymentRepository.save(payment);
+        log.info("Payment status updated successfully: {}", id);
+        return updated;
     }
 
     /**
