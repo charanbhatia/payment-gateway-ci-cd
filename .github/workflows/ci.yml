@@ -120,3 +120,198 @@ jobs:
         with:
           name: dependency-check-report
           path: target/dependency-check-report.html
+  
+  # Stage 5: Unit Testing & Code Coverage
+  unit-tests:
+    name: Unit Tests & Coverage Analysis
+    runs-on: ubuntu-latest
+    needs: [checkstyle]
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Run Unit Tests with Coverage
+        run: mvn clean test jacoco:report
+        
+      - name: Generate Coverage Report
+        run: mvn jacoco:report
+        
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: target/surefire-reports/
+          
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+  
+  # Stage 6: Application Build & Packaging
+  build-package:
+    name: Build & Package Application
+    runs-on: ubuntu-latest
+    needs: [unit-tests, codeql-analysis, dependency-check]
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Build Application JAR
+        run: mvn clean package -DskipTests
+        
+      - name: Upload Application JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-jar
+          path: target/*.jar
+          retention-days: 30
+  
+  # Stage 7: Docker Image Build
+  docker-build:
+    name: Docker Image Build
+    runs-on: ubuntu-latest
+    needs: build-package
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Download Application JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: application-jar
+          path: target/
+          
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: payment-gateway:${{ github.sha }},payment-gateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/payment-gateway.tar
+          
+      - name: Upload Docker Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/payment-gateway.tar
+          retention-days: 7
+  
+  # Stage 8: Container Security Scanning - Trivy
+  trivy-scan:
+    name: Container Security Scan - Trivy
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+          
+      - name: Load Docker Image
+        run: docker load --input /tmp/payment-gateway.tar
+        
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: payment-gateway:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          
+      - name: Upload Trivy Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          
+      - name: Run Trivy for Human-Readable Report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: payment-gateway:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+  
+  # Stage 9: Container Runtime Validation
+  container-validation:
+    name: Container Runtime Validation
+    runs-on: ubuntu-latest
+    needs: trivy-scan
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Download Docker Image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+          
+      - name: Load Docker Image
+        run: docker load --input /tmp/payment-gateway.tar
+        
+      - name: Start Container
+        run: |
+          docker run -d --name payment-gateway-test \
+            -p 8080:8080 \
+            -e SPRING_PROFILES_ACTIVE=test \
+            payment-gateway:latest
+            
+      - name: Wait for Application Startup
+        run: |
+          echo "Waiting for application to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/actuator/health 2>/dev/null; then
+              echo "Application is healthy!"
+              exit 0
+            fi
+            echo "Attempt $i: Application not ready yet..."
+            sleep 2
+          done
+          echo "Application failed to start"
+          docker logs payment-gateway-test
+          exit 1
+          
+      - name: Run API Smoke Tests
+        run: |
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8080/actuator/health || exit 1
+          
+          echo "Testing info endpoint..."
+          curl -f http://localhost:8080/actuator/info || exit 1
+          
+      - name: View Container Logs
+        if: always()
+        run: docker logs payment-gateway-test
+        
+      - name: Stop and Remove Container
+        if: always()
+        run: |
+          docker stop payment-gateway-test
+          docker rm payment-gateway-test
