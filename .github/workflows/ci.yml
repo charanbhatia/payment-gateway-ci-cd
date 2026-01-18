@@ -30,3 +30,90 @@ jobs:
         
       - name: Display Maven version
         run: mvn -version
+  
+  # Stage 2: Code Quality - Linting
+  checkstyle:
+    name: Code Quality - Checkstyle Linting
+    runs-on: ubuntu-latest
+    needs: checkout-setup
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Run Checkstyle
+        run: mvn checkstyle:check
+        
+      - name: Upload Checkstyle Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkstyle-report
+          path: target/checkstyle-result.xml
+  
+  # Stage 3: SAST - CodeQL Security Scanning
+  codeql-analysis:
+    name: Security - CodeQL SAST
+    runs-on: ubuntu-latest
+    needs: checkout-setup
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java
+          queries: security-and-quality
+          
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Build application for CodeQL
+        run: mvn clean compile -DskipTests
+        
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"
+  
+  # Stage 4: SCA - OWASP Dependency Check
+  dependency-check:
+    name: Security - OWASP Dependency Check (SCA)
+    runs-on: ubuntu-latest
+    needs: checkout-setup
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Run OWASP Dependency Check
+        run: mvn dependency-check:check -Ddependency-check.failBuildOnCVSS=7
+        continue-on-error: true
+        
+      - name: Upload Dependency Check Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
