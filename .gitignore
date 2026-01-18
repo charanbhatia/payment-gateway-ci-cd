@@ -1,0 +1,39 @@
+# Compiled class files
+*.class
+target/
+*.jar
+*.war
+*.ear
+
+# Log files
+*.log
+logs/
+
+# IDE specific files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Environment files
+.env
+*.env
+
+# Test coverage
+coverage/
+
+# Dependency Check
+dependency-check-report.html
+
+# Docker
+*.tar
+
+# OS
+Thumbs.db
