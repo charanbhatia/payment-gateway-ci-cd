@@ -166,7 +166,7 @@ class PaymentServiceTest {
         when(paymentRepository.findByMerchantId("MERCHANT_123")).thenReturn(payments);
 
         // Act
-        List<Payment> result = paymentService.getPaymentsByMerchant("MERCHANT_123");
+        List<Payment> result = paymentService.getPaymentsByMerchantId("MERCHANT_123");
 
         // Assert
         assertNotNull(result);
