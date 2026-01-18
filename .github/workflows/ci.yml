@@ -1,0 +1,32 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  MAVEN_OPTS: -Xmx1024m
+
+jobs:
+  # Stage 1: Checkout and Setup
+  checkout-setup:
+    name: Checkout & Setup Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+          
+      - name: Display Java version
+        run: java -version
+        
+      - name: Display Maven version
+        run: mvn -version
