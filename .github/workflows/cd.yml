@@ -42,7 +42,7 @@ jobs:
       - name: Update Image Tag in Deployment
         run: |
           # Update the image tag to use the latest from Docker Hub
-          sed -i "s|image: .*|image: ${{ env.DOCKER_IMAGE }}:latest|g" k8s/deployment.yaml
+          sed -i '' "s|image: .*|image: ${{ env.DOCKER_IMAGE }}:latest|g" k8s/deployment.yaml
           
       - name: Apply Kubernetes ConfigMap
         run: kubectl apply -f k8s/configmap.yaml -n ${{ env.K8S_NAMESPACE }}
