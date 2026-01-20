@@ -17,7 +17,7 @@ jobs:
   # Stage 1: Deploy to Kubernetes
   deploy-to-kubernetes:
     name: Deploy to Kubernetes Cluster
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout source code
@@ -80,7 +80,7 @@ jobs:
   # Stage 2: Smoke Tests
   smoke-tests:
     name: Post-Deployment Smoke Tests
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: deploy-to-kubernetes
     steps:
       - name: Checkout source code
@@ -147,7 +147,7 @@ jobs:
   # Stage 3: DAST - Dynamic Application Security Testing
   dast-scan:
     name: DAST - OWASP ZAP Security Scan
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: smoke-tests
     steps:
       - name: Checkout source code
@@ -213,7 +213,7 @@ jobs:
   # Stage 4: Deployment Summary
   deployment-summary:
     name: Deployment Summary
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [deploy-to-kubernetes, smoke-tests, dast-scan]
     if: always()
     steps:
