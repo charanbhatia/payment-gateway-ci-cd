@@ -5,21 +5,27 @@ on:
     workflows: ["CI Pipeline"]
     types:
       - completed
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/payment-gateway
-  K8S_NAMESPACE: default
   APP_NAME: payment-gateway
+  K8S_NAMESPACE: default
+  DOCKER_IMAGE: charanbhatia/payment-gateway
 
 jobs:
   # Stage 1: Deploy to Kubernetes
-  deploy-to-kubernetes:
+  deploy:
     name: Deploy to Kubernetes Cluster
     runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
     steps:
+      - name: Set up job
+        run: echo "🚀 Starting deployment to Kubernetes cluster"
+        
       - name: Checkout source code
         uses: actions/checkout@v4
         
@@ -81,8 +87,11 @@ jobs:
   smoke-tests:
     name: Post-Deployment Smoke Tests
     runs-on: self-hosted
-    needs: deploy-to-kubernetes
+    needs: deploy
     steps:
+      - name: Set up job
+        run: echo "🧪 Running smoke tests"
+        
       - name: Checkout source code
         uses: actions/checkout@v4
         
@@ -97,24 +106,13 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
           
-      - name: Get Service Endpoint
-        id: get-endpoint
-        run: |
-          # Wait for service to be ready
-          sleep 10
-          
-          # For Kind cluster, use localhost with NodePort
-          NODE_PORT=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
-          SERVICE_URL="http://localhost:${NODE_PORT}"
-          
-          echo "SERVICE_URL=${SERVICE_URL}" >> $GITHUB_OUTPUT
-          echo "🌐 Service URL: ${SERVICE_URL}"
-          
       - name: Test Health Endpoint
         run: |
           echo "Testing health endpoint..."
+          SERVICE_URL="http://payment-gateway-service.default.svc.cluster.local/actuator/health"
+          
           for i in {1..30}; do
-            if curl -f ${{ steps.get-endpoint.outputs.SERVICE_URL }}/actuator/health 2>/dev/null; then
+            if kubectl run test-health-$i --image=curlimages/curl:latest --rm -i --restart=Never --command -- curl -f "$SERVICE_URL" 2>/dev/null; then
               echo "✅ Health check passed!"
               exit 0
             fi
@@ -126,17 +124,19 @@ jobs:
           
       - name: Test API Endpoints
         run: |
-          BASE_URL="${{ steps.get-endpoint.outputs.SERVICE_URL }}"
+          echo "Testing API endpoints..."
           
           echo "Testing ping endpoint..."
-          curl -f ${BASE_URL}/api/v1/payments/ping || exit 1
+          kubectl run test-ping --image=curlimages/curl:latest --rm -i --restart=Never --command -- \
+            curl -f http://payment-gateway-service.default.svc.cluster.local/api/v1/payments/ping || exit 1
           
           echo "Testing info endpoint..."
-          curl -f ${BASE_URL}/actuator/info || exit 1
+          kubectl run test-info --image=curlimages/curl:latest --rm -i --restart=Never --command -- \
+            curl -f http://payment-gateway-service.default.svc.cluster.local/actuator/info || exit 1
           
           echo "✅ All smoke tests passed!"
 
-  # Stage 3: DAST - Dynamic Application Security Testing
+  # Stage 3: DAST - Dynamic Application Security Testing  
   dast-scan:
     name: DAST - OWASP ZAP Security Scan
     runs-on: self-hosted
@@ -156,30 +156,34 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
           
-      - name: Get Service Endpoint
-        id: get-endpoint
+      - name: Setup Port Forward for DAST
         run: |
-          SERVICE_IP=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+          # Start port forwarding in background
+          kubectl port-forward svc/payment-gateway-service 8080:80 -n ${{ env.K8S_NAMESPACE }} &
+          PF_PID=$!
+          echo "PORT_FORWARD_PID=$PF_PID" >> $GITHUB_ENV
           
-          if [ -z "$SERVICE_IP" ]; then
-            NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-            NODE_PORT=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
-            SERVICE_URL="http://${NODE_IP}:${NODE_PORT}"
-          else
-            SERVICE_URL="http://${SERVICE_IP}:8080"
-          fi
+          # Wait for port forward to be ready
+          sleep 5
           
-          echo "SERVICE_URL=${SERVICE_URL}" >> $GITHUB_OUTPUT
-          echo "🌐 Target URL for DAST: ${SERVICE_URL}"
+          echo "🌐 Port forward established (PID: $PF_PID)"
           
       - name: Run OWASP ZAP Baseline Scan
+        continue-on-error: true
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: ${{ steps.get-endpoint.outputs.SERVICE_URL }}
+          target: 'http://localhost:8080'
           rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a -j -l WARN'
           allow_issue_writing: false
           fail_action: false
+          
+      - name: Stop Port Forward
+        if: always()
+        run: |
+          if [ -n "${{ env.PORT_FORWARD_PID }}" ]; then
+            kill ${{ env.PORT_FORWARD_PID }} || true
+          fi
           
       - name: Upload ZAP Scan Report
         if: always()
@@ -198,34 +202,32 @@ jobs:
           echo "🔒 DAST Scan Completed"
           echo "View detailed report in artifacts"
           if [ -f report_md.md ]; then
-            echo "## ZAP Scan Summary"
-            cat report_md.md || true
+            cat report_md.md
           fi
 
   # Stage 4: Deployment Summary
   deployment-summary:
     name: Deployment Summary
     runs-on: self-hosted
-    needs: [deploy-to-kubernetes, smoke-tests, dast-scan]
+    needs: [deploy, smoke-tests, dast-scan]
     if: always()
     steps:
-      - name: Generate Deployment Summary
+      - name: Generate Deployment Report
         run: |
-          echo "# 🚀 CD Pipeline Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Deployment Status" >> $GITHUB_STEP_SUMMARY
-          echo "- **Application**: Payment Gateway" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment**: Kubernetes Cluster" >> $GITHUB_STEP_SUMMARY
-          echo "- **Namespace**: ${{ env.K8S_NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: ${{ env.DOCKER_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Pipeline Stages" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Kubernetes Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Smoke Tests" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ DAST Security Scan" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review DAST scan results in artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "2. Monitor application logs and metrics" >> $GITHUB_STEP_SUMMARY
-          echo "3. Verify application functionality" >> $GITHUB_STEP_SUMMARY
+          echo "# 📋 Deployment Summary"
+          echo ""
+          echo "## Application Details"
+          echo "- **Application**: ${{ env.APP_NAME }}"
+          echo "- **Namespace**: ${{ env.K8S_NAMESPACE }}"
+          echo "- **Image**: ${{ env.DOCKER_IMAGE }}:latest"
+          echo "- **Commit**: ${{ github.sha }}"
+          echo ""
+          echo "## Pipeline Stages"
+          echo "- ✅ Deployment: ${{ needs.deploy.result }}"
+          echo "- ✅ Smoke Tests: ${{ needs.smoke-tests.result }}"
+          echo "- ✅ DAST Scan: ${{ needs.dast-scan.result }}"
+          echo ""
+          echo "## Deployment Time"
+          echo "- Completed at: $(date)"
+          echo ""
+          echo "🎉 CD Pipeline Completed Successfully!"
