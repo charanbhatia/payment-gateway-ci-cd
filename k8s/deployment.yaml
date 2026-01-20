@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: payment-gateway
-        image: your-dockerhub-username/payment-gateway:latest
+        image: charanbhatia/payment-gateway:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -36,33 +36,6 @@ spec:
             configMapKeyRef:
               name: payment-gateway-config
               key: SERVER_PORT
-        - name: SPRING_DATASOURCE_URL
-          value: "jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
-        - name: DB_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: payment-gateway-config
-              key: DB_HOST
-        - name: DB_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: payment-gateway-config
-              key: DB_PORT
-        - name: DB_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: payment-gateway-config
-              key: DB_NAME
-        - name: SPRING_DATASOURCE_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: payment-gateway-secret
-              key: DB_USERNAME
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: payment-gateway-secret
-              key: DB_PASSWORD
         resources:
           requests:
             memory: "512Mi"
