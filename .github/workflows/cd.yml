@@ -69,7 +69,7 @@ jobs:
           kubectl get pods -l app=${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }}
           echo ""
           echo "🌐 Service Status:"
-          kubectl get svc ${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }}
+          kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }}
           
       - name: Get Application Logs
         if: always()
@@ -104,12 +104,12 @@ jobs:
           sleep 10
           
           # Get service endpoint (adjust based on your service type)
-          SERVICE_IP=$(kubectl get svc ${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+          SERVICE_IP=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
           
           if [ -z "$SERVICE_IP" ]; then
             # If LoadBalancer IP not available, try NodePort
             NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-            NODE_PORT=$(kubectl get svc ${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
+            NODE_PORT=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
             SERVICE_URL="http://${NODE_IP}:${NODE_PORT}"
           else
             SERVICE_URL="http://${SERVICE_IP}:8080"
@@ -167,11 +167,11 @@ jobs:
       - name: Get Service Endpoint
         id: get-endpoint
         run: |
-          SERVICE_IP=$(kubectl get svc ${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
+          SERVICE_IP=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "")
           
           if [ -z "$SERVICE_IP" ]; then
             NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}' || kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
-            NODE_PORT=$(kubectl get svc ${{ env.APP_NAME }} -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
+            NODE_PORT=$(kubectl get svc payment-gateway-service -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.spec.ports[0].nodePort}')
             SERVICE_URL="http://${NODE_IP}:${NODE_PORT}"
           else
             SERVICE_URL="http://${SERVICE_IP}:8080"
